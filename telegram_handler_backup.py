@@ -1,0 +1,336 @@
+import os, json, glob, shutil, re
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from self_editor import append_snippet, safe_replace_in_file
+from github_updater import git_commit_and_push
+
+with open("config.json","r",encoding="utf-8") as f:
+    CFG = json.load(f)
+
+ADMIN_ID = str(os.getenv("ADMIN_ID") or CFG.get("ADMIN_ID",""))
+
+# حالت‌های کاربر
+USER_STATES = {}
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("❌ دسترسی نداری.")
+        return
+    
+    keyboard = [
+        [InlineKeyboardButton("📝 افزودن snippet", callback_data="mode_snippet")],
+        [InlineKeyboardButton("🔧 جایگزینی کد", callback_data="mode_replace")],
+        [InlineKeyboardButton("❌ لغو حالت", callback_data="cancel_mode")]
+    ]
+    await update.message.reply_text(
+        "🤖 Self-Updating Agent\n\n"
+        "انتخاب کن:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("❌ دسترسی نداری.")
+        return
+
+    text = update.message.text.strip()
+    
+    # دستورات لغو
+    if text.lower() in ['cancel', 'exit', 'لغو', 'خروج']:
+        USER_STATES[user_id] = None
+        await update.message.reply_text("✅ حالت ویژه لغو شد.")
+        return
+
+    # حالت snippet
+    if USER_STATES.get(user_id) == 'snippet':
+        await handle_snippet_mode(update, text)
+        return
+    
+    # حالت replace
+    if USER_STATES.get(user_id) == 'replace':
+        await handle_replace_mode(update, text)
+        return
+
+    # فرمت قدیمی برای backward compatibility
+    if text.startswith("add_snippet::"):
+        await handle_legacy_snippet(update, text)
+        return
+    
+    # اگر هیچ حالتی فعال نبود
+    await update.message.reply_text(
+        "لطفاً اول از منوی اصلی یک حالت انتخاب کن:\n"
+        "/start - نمایش منوی اصلی"
+    )
+
+async def handle_snippet_mode(update: Update, text: str):
+    """مدیریت حالت افزودن snippet"""
+    try:
+        parts = text.split('\n')
+        if len(parts) < 3:
+            await update.message.reply_text(
+                "❌ فرمت نادرست!\n\n"
+                "فرمت صحیح:\n"
+                "فایل\n"
+                "مارکر\n"
+                "کد\n\n"
+                "مثال:\n"
+                "telegram_handler.py\n"
+                "# KEYBOARD_MARKER
+[InlineKeyboardButton('🎮 بازی', callback_data='play')]
+[InlineKeyboardButton('🎮 بازی', callback_data='play')],
+[InlineKeyboardButton('🤖 دستور AI', callback_data='ai_mode')]\n"
+                "InlineKeyboardButton('🎮 بازی', callback_data='play')"
+            )
+            return
+        
+        file, marker, snippet = parts[0], parts[1], '\n'.join(parts[2:])
+        res = append_snippet(file, marker, snippet)
+        
+        if res["changed"]:
+            kb = [
+                [InlineKeyboardButton("✅ Commit & Push", callback_data=f"push::{file}")],
+                [InlineKeyboardButton("❌ Revert", callback_data=f"revert::{file}")],
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_menu")]
+            ]
+            await update.message.reply_text(
+                f"✅ تغییر اعمال شد!\n"
+                f"📁 فایل: {file}\n"
+                f"💾 بکاپ: {res['backup']}\n\n"
+                "آیا commit & push کنم؟",
+                reply_markup=InlineKeyboardMarkup(kb)
+            )
+        else:
+            await update.message.reply_text("ℹ️ تغییر اعمال نشد یا تکراری بود.")
+        
+        USER_STATES[str(update.message.from_user.id)] = None
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ خطا: {e}")
+
+async def handle_replace_mode(update: Update, text: str):
+    """مدیریت حالت جایگزینی کد"""
+    try:
+        parts = text.split('\n')
+        if len(parts) < 3:
+            await update.message.reply_text(
+                "❌ فرمت نادرست!\n\n"
+                "فرمت صحیح:\n"
+                "فایل\n"
+                "الگو\n"
+                "جایگزین\n\n"
+                "مثال:\n"
+                "telegram_handler.py\n"
+                "async def start.*?await update\\.message\\.reply_text\\(\"سلام\"\\)\n"
+                "async def start(update, context):\\n    await update.message.reply_text(\"سلام! به ربات خوش آمدید\")"
+            )
+            return
+        
+        file, pattern, replacement = parts[0], parts[1], '\n'.join(parts[2:])
+        res = safe_replace_in_file(file, pattern, replacement)
+        
+        if res["changed"]:
+            kb = [
+                [InlineKeyboardButton("✅ Commit & Push", callback_data=f"push::{file}")],
+                [InlineKeyboardButton("❌ Revert", callback_data=f"revert::{file}")],
+                [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_menu")]
+            ]
+            await update.message.reply_text(
+                f"✅ جایگزینی انجام شد!\n"
+                f"📁 فایل: {file}\n"
+                f"💾 بکاپ: {res['backup']}\n\n"
+                "آیا commit & push کنم؟",
+                reply_markup=InlineKeyboardMarkup(kb)
+            )
+        else:
+            await update.message.reply_text("ℹ️ هیچ تغییری اعمال نشد (الگو پیدا نشد).")
+        
+        USER_STATES[str(update.message.from_user.id)] = None
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ خطا: {e}")
+
+async def handle_legacy_snippet(update: Update, text: str):
+    """پشتیبانی از فرمت قدیمی"""
+    try:
+        _, file, marker, snippet = text.split("::", 3)
+        res = append_snippet(file, marker, snippet)
+        
+        if res["changed"]:
+            kb = [
+                [InlineKeyboardButton("✅ Commit & Push", callback_data=f"push::{file}")],
+                [InlineKeyboardButton("❌ Revert", callback_data=f"revert::{file}")]
+            ]
+            await update.message.reply_text(
+                f"تغییر اعمال شد و بکاپ در {res['backup']} ساخته شد. آیا commit & push کنم؟",
+                reply_markup=InlineKeyboardMarkup(kb)
+            )
+        else:
+            await update.message.reply_text("تغییر اعمال نشد یا تکراری بود.")
+            
+    except Exception as e:
+        await update.message.reply_text(f"خطا: {e}")
+
+async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    user_id = str(query.from_user.id)
+    
+    if user_id != ADMIN_ID:
+        await query.edit_message_text("❌ دسترسی ندارید.")
+        return
+    
+    if data == "mode_snippet":
+        USER_STATES[user_id] = 'snippet'
+        await query.edit_message_text(
+            "📝 حالت افزودن snippet فعال شد\n\n"
+            "لطفاً به این فرمت ارسال کن:\n"
+            "فایل\n"
+            "مارکر\n"
+            "کد\n\n"
+            "مثال:\n"
+            "telegram_handler.py\n"
+            "# KEYBOARD_MARKER
+[InlineKeyboardButton('🎮 بازی', callback_data='play')]
+[InlineKeyboardButton('🎮 بازی', callback_data='play')],
+[InlineKeyboardButton('🤖 دستور AI', callback_data='ai_mode')]\n"
+            "InlineKeyboardButton('🎮 بازی', callback_data='play')\n\n"
+            "برای لغو: cancel"
+        )
+    
+    elif data == "mode_replace":
+        USER_STATES[user_id] = 'replace'
+        await query.edit_message_text(
+            "🔧 حالت جایگزینی کد فعال شد\n\n"
+            "لطفاً به این فرمت ارسال کن:\n"
+            "فایل\n"
+            "الگو\n"
+            "جایگزین\n\n"
+            "مثال:\n"
+            "telegram_handler.py\n"
+            "async def start.*?await update\\.message\\.reply_text\\(\"سلام\"\\)\n"
+            "async def start(update, context):\\n    await update.message.reply_text(\"سلام! به ربات خوش آمدید\")\n\n"
+            "برای لغو: cancel"
+        )
+    
+    elif data == "cancel_mode":
+        USER_STATES[user_id] = None
+        await query.edit_message_text("✅ حالت ویژه لغو شد.")
+    
+    elif data == "back_to_menu":
+        USER_STATES[user_id] = None
+        keyboard = [
+            [InlineKeyboardButton("📝 افزودن snippet", callback_data="mode_snippet")],
+            [InlineKeyboardButton("🔧 جایگزینی کد", callback_data="mode_replace")],
+            [InlineKeyboardButton("❌ لغو حالت", callback_data="cancel_mode")]
+        ]
+        await query.edit_message_text(
+            "🤖 Self-Updating Agent\n\n"
+            "انتخاب کن:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    
+    elif data.startswith("push::"):
+        file = data.split("::",1)[1]
+        await query.edit_message_text("⏳ در حال commit و push ...")
+        result = git_commit_and_push(commit_message=f"agent: edit {file}", auto_push=True)
+        if result.get("ok"):
+            await query.edit_message_text(f"✅ تغییرات push شد!\n{result.get('message','')}")
+        else:
+            await query.edit_message_text(f"❌ خطا در push:\n{str(result.get('error'))}")
+    
+    elif data.startswith("revert::"):
+        file = data.split("::",1)[1]
+        b = glob.glob("backup/" + os.path.basename(file) + ".*.bak")
+        if not b:
+            await query.edit_message_text("❌ هیچ بکاپی یافت نشد.")
+            return
+        latest = sorted(b)[-1]
+        shutil.copy2(latest, file)
+        await query.edit_message_text(f"⏪ فایل بازیابی شد از {latest}")
+
+def run_bot():
+    token = os.getenv("TELEGRAM_TOKEN")
+    if not token:
+        raise RuntimeError("Set TELEGRAM_TOKEN env var")
+    app = ApplicationBuilder().token(token).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CallbackQueryHandler(callback_handler))
+    app.run_polling()
+
+print("✅ این تغییر خودکار به گیت‌هاب پوش شد!")
+print("🚀 تست دوم موفقیت آمیز بود!")
+from ai_agent import ai_agent, AIAgent
+async def ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("❌ دسترسی نداری.")
+        return
+    
+    user_command = update.message.text.strip()
+    
+    if user_command.startswith("/ai "):
+        command = user_command[4:].strip()
+        await update.message.reply_text(f"🤔 در حال پردازش دستور: {command}")
+        
+        # تحلیل دستور توسط AI
+        ai_response = ai_agent.analyze_command(command)
+        
+        try:
+            # پارس کردن پاسخ AI
+            lines = ai_response.strip().split('\n')
+            file_name, marker, code = None, None, None
+            
+            for line in lines:
+                if line.startswith("FILE:"):
+                    file_name = line.split("FILE:")[1].strip()
+                elif line.startswith("MARKER:"):
+                    marker = line.split("MARKER:")[1].strip()
+                elif line.startswith("CODE:"):
+                    code = line.split("CODE:")[1].strip()
+            
+            if file_name and marker and code:
+                # اعمال تغییرات
+                res = append_snippet(file_name, marker, code)
+                
+                if res["changed"]:
+                    # کامیت و پوش
+                    result = git_commit_and_push(commit_message=f"ai: {command}", auto_push=True)
+                    
+                    if result.get("ok"):
+                        await update.message.reply_text(
+                            f"✅ دستور AI اجرا شد!\\n"
+                            f"📁 فایل: {file_name}\\n"
+                            f"🔄 در حال ریستارت...\\n\\n"
+                            f"پاسخ AI: {ai_response}"
+                        )
+                        
+                        # ریستارت خودکار
+                        import sys
+                        import os
+                        os.execv(sys.executable, [sys.executable] + sys.argv)
+                    else:
+                        await update.message.reply_text(f"❌ خطا در push: {result.get('error')}")
+                else:
+                    await update.message.reply_text("ℹ️ تغییر اعمال نشد یا تکراری بود.")
+            else:
+                await update.message.reply_text(f"❌ پاسخ AI نامعتبر: {ai_response}")
+                
+        except Exception as e:
+            await update.message.reply_text(f"❌ خطا در اجرای دستور AI: {e}")
+    
+    else:
+        await update.message.reply_text(
+            "🤖 دستور AI\\n\\n"
+            "فرمت: /ai [دستور]\\n\\n"
+            "مثال‌ها:\\n"
+            "/ai اضافه کردن دکمه وضعیت\\n"  
+            "/ai نمایش تاریخ و ساعت\\n"
+            "/ai اضافه کردن منوی جدید"
+        )
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, ai_command))
