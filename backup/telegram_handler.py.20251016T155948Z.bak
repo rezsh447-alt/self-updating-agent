@@ -79,31 +79,6 @@ async def ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🤖 دستور AI\n\nفرمت: /ai [دستور]\n\nمثال:\n/ai اضافه کردن دکمه وضعیت")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.message.from_user.id)
-    if user_id != ADMIN_ID:
-        await update.message.reply_text("❌ دسترسی نداری.")
-        return
-
-    text = update.message.text.strip()
-    
-    # دستورات مدیریتی
-    if text.lower() in ['/menu', 'منو', 'menu']:
-        await start(update, context)
-        return
-    
-    if text.lower() in ['/cancel', 'cancel', 'لغو', 'خروج']:
-        USER_STATES[user_id] = None
-        await update.message.reply_text("✅ حالت ویژه لغو شد.")
-        return
-
-    # اگر پیام با /ai شروع شد
-    if text.startswith("/ai "):
-        await ai_command(update, context)
-        return
-    
-    # اگر پیام معمولی هست، مستقیماً به AI بفرست
-    await ai_chat(update, context)
     user_id = str(update.message.from_user.id)
     if user_id != ADMIN_ID:
         await update.message.reply_text("❌ دسترسی نداری.")
