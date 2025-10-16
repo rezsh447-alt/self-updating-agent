@@ -254,5 +254,3 @@ def run_bot():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(callback_handler))
     app.run_polling()
-
-print("✅ این تغییر خودکار به گیت‌هاب پوش شد!")

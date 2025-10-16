@@ -1,6 +1,6 @@
 {
   "FILES_ALLOWED": ["telegram_handler.py", "self_editor.py", "github_updater.py", "main.py", "config.json"],
   "BACKUP_PATH": "backup",
-  "AUTO_PUSH": false,
-  "ADMIN_ID": ""
+  "AUTO_PUSH": true,
+  "ADMIN_ID": "247818318"
 }
