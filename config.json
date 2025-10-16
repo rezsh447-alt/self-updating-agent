@@ -1,11 +1,22 @@
 {
-  "FILES_ALLOWED": ["telegram_handler.py", "self_editor.py", "github_updater.py", "main.py", "config.json", "ai_agent.py"],
+  "FILES_ALLOWED": [
+    "telegram_handler.py",
+    "self_editor.py",
+    "github_updater.py",
+    "main.py",
+    "config.json",
+    "ai_agent.py"
+  ],
   "BACKUP_PATH": "backup",
   "AUTO_PUSH": true,
-  "ADMIN_ID": "247818318"
-}
-  "FILES_ALLOWED": ["telegram_handler.py", "self_editor.py", "github_updater.py", "main.py", "config.json"],
-  "BACKUP_PATH": "backup",
-  "AUTO_PUSH": false,
-  "ADMIN_ID": "YOUR_ADMIN_ID"
+  "ADMIN_ID": "247818318",
+  "ALLOWED_USERS": {
+    "247818318": {
+      "name": "مدیر اصلی",
+      "role": "admin"
+    }
+  },
+  "MAX_USERS": 6,
+  "AUTO_BACKUP_INTERVAL": 10,
+  "CHATS_DIR": "chats"
 }

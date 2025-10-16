@@ -1,0 +1,18 @@
+telegram_handler.py
+# آپدیت import
+from session_manager import smart_session_manager
+
+# در handle_message مطمئن شو session وجود داره
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("❌ دسترسی نداری.")
+        return
+
+    text = update.message.text.strip()
+    
+    # اگر session نداریم، یکی ایجاد کن
+    if not smart_session_manager.get_current_session(user_id):
+        smart_session_manager.create_session(user_id, "چت عمومی")
+    
+    # بقیه دستورات مثل قبل...

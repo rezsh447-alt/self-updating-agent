@@ -1,0 +1,47 @@
+telegram_handler.py
+# اضافه کردن دستورات جدید به منو
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.message.from_user.id)
+    if user_id != ADMIN_ID:
+        await update.message.reply_text("❌ دسترسی نداری.")
+        return
+    
+    keyboard = [
+        [InlineKeyboardButton("📝 افزودن snippet", callback_data="mode_snippet")],
+        [InlineKeyboardButton("🔧 جایگزینی کد", callback_data="mode_replace")],
+        [InlineKeyboardButton("🤖 دستور AI", callback_data="ai_mode")],
+        [InlineKeyboardButton("📊 آمار حافظه", callback_data="memory_stats")],
+        [InlineKeyboardButton("🎯 الگوهای من", callback_data="my_patterns")],
+        [InlineKeyboardButton("❌ لغو حالت", callback_data="cancel_mode")]
+    ]
+    await update.message.reply_text(
+        "🤖 Self-Updating AI Agent\n\nانتخاب کن:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+# اضافه کردن هندلر جدید برای آمار
+async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    user_id = str(query.from_user.id)
+    
+    if user_id != ADMIN_ID:
+        await query.edit_message_text("❌ دسترسی ندارید.")
+        return
+    
+    if data == "memory_stats":
+        stats = smart_memory.get_user_stats(user_id)
+        await query.edit_message_text(
+            f"📊 آمار حافظه هوشمند شما:\n"
+            f"• چت‌های ذخیره شده: {stats['local_chats']}\n"
+            f"• کلمات یادگرفته: {stats['learned_words']}\n"
+            f"• انواع درخواست: {stats['request_types']}\n"
+            f"• مصرف حافظه: {stats['memory_usage']}\n"
+            f"• آخرین چت: {stats['last_chat']}\n"
+            f"💾 همگام‌سازی با گیت‌هاب: ✅"
+        )
+    
+    elif data == "my_patterns":
+        insights = smart_memory.get_user_insights(user_id)
+        await query.edit_message_text(insights)
