@@ -1,0 +1,1 @@
+میدونی ~/agent/setup_safe_runner.sh چکار میکنه؟

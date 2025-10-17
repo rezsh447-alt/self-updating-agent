@@ -1,0 +1,1 @@
+print('✅ Safe Runner test OK!')

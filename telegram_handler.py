@@ -1,3 +1,4 @@
+from safe_exec import safe_run_code
 import os, json, glob, shutil, re
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
@@ -43,6 +44,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"✅ سشن جدید ساخته شد برای کاربر {user_id}")
 
     text = update.message.text.strip()
+    if text.lower().startswith("تست کن") or text.lower().startswith("اجرا") or "run" in text.lower():
+
+        await update.message.reply_text("⚙️ در حال اجرای امن کد...")
+
+        code_part = text.replace("تست کن", "").replace("اجرا", "").strip()
+
+        if not code_part:
+
+            await update.message.reply_text("❗ لطفاً کد پایتون رو بعد از عبارت بنویس.")
+
+            return
+
+        result = safe_run_code(code_part)
+
+        await update.message.reply_text(result)
+
+        return
 
     # دستورات مدیریتی
     if text.lower() in ['/menu', 'منو', 'menu']:
